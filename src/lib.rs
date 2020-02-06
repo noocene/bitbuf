@@ -1,5 +1,3 @@
-use core::borrow::Borrow;
-
 #[derive(Debug)]
 pub struct Insufficient;
 
@@ -30,13 +28,9 @@ impl<'a> BitBuf<'a> {
         self.prefix += (bits & 7) as u8;
         if self.prefix >= 8 {
             self.prefix -= 8;
-            self.data = &self
-                .data
-                .borrow()
-                .get((bits / 8) + 1..)
-                .ok_or(Insufficient)?;
+            self.data = self.data.get((bits / 8) + 1..).ok_or(Insufficient)?;
         } else {
-            self.data = &self.data.borrow().get(bits / 8..).ok_or(Insufficient)?;
+            self.data = self.data.get(bits / 8..).ok_or(Insufficient)?;
         }
         Ok(())
     }
@@ -104,4 +98,14 @@ impl<'a> BitBuf<'a> {
     }
 }
 
-pub struct BitBufMut {}
+#[derive(Debug)]
+pub struct BitBufMut<'a> {
+    data: &'a mut [u8],
+    prefix: u8,
+}
+
+impl<'a> BitBufMut<'a> {
+    pub fn new(data: &'a mut [u8]) -> Self {
+        BitBufMut { data, prefix: 0 }
+    }
+}
