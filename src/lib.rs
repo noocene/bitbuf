@@ -60,6 +60,12 @@ impl<'a> BitBuf<'a> {
         }
     }
 
+    pub fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
+        Ok(for i in 0..dst.len() {
+            dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient)?;
+        })
+    }
+
     pub fn copy_to_slice(&mut self, dst: &mut [u8], bits: usize) -> Result<(), CopyError> {
         let bytes = bits / 8;
         let len = dst.len();
@@ -107,5 +113,16 @@ pub struct BitBufMut<'a> {
 impl<'a> BitBufMut<'a> {
     pub fn new(data: &'a mut [u8]) -> Self {
         BitBufMut { data, prefix: 0 }
+    }
+
+    pub fn skip(&'a mut self, bits: usize) -> Result<(), Insufficient> {
+        self.prefix += (bits & 7) as u8;
+        if self.prefix >= 8 {
+            self.prefix -= 8;
+            self.data = self.data.get_mut((bits / 8) + 1..).ok_or(Insufficient)?;
+        } else {
+            self.data = self.data.get_mut(bits / 8..).ok_or(Insufficient)?;
+        }
+        Ok(())
     }
 }
