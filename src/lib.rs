@@ -39,6 +39,7 @@ impl<'a> BitBuf<'a> {
 
     pub fn byte_at_offset(&self, offset: usize) -> Option<u8> {
         let len = self.len();
+        let offset = self.prefix as usize + offset;
         if offset == 0 {
             if len == 0 {
                 return None;
