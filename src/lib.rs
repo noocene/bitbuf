@@ -100,7 +100,7 @@ impl<'a> BitBuf<'a> {
     pub fn pop(&mut self) -> Option<bool> {
         let byte = self.byte_at_offset(0)?;
         self.advance(1).unwrap();
-        Some(byte & 1 != 0)
+        Some(byte & 128 != 0)
     }
 
     pub fn len(&self) -> usize {
