@@ -1,5 +1,3 @@
-#![no_std]
-
 use core::mem::replace;
 
 #[derive(Debug)]
@@ -160,11 +158,16 @@ impl<'a> BitBufMut<'a> {
 
     fn write(&mut self, item: u8, bits: usize) -> Result<(), Insufficient> {
         if self.prefix == 0 {
-            self.data[0] = item;
+            let inv_bits = 8 - bits;
+            let litem = item & (255 << (inv_bits));
+            let hitem = item | (255 >> (inv_bits));
+            self.data[0] |= litem;
+            self.data[0] &= hitem;
         } else {
+            let inv_bits = 8 - bits;
             let inv_prefix = 8 - self.prefix;
-            let litem = item & (255 << (8 - bits));
-            let hitem = item | (255 >> bits);
+            let litem = item & (255 << inv_bits);
+            let hitem = item | (255 >> inv_bits);
             self.data[0] |= litem >> self.prefix;
             self.data[0] &= (hitem >> self.prefix) | (255 << inv_prefix);
             self.data[1] |= litem << inv_prefix;
@@ -212,6 +215,7 @@ impl<'a> BitBufMut<'a> {
                 return Err(CopyError::Overflow);
             }
             let byte = data[bytes];
+            println!("write");
             self.write(byte, rem)?;
         }
         Ok(())
