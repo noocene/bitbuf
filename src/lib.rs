@@ -37,7 +37,7 @@ impl<'a> BitBuf<'a> {
         Ok(())
     }
 
-    pub fn byte_at_offset(&self, offset: usize) -> Option<u8> {
+    fn data_at_offset(&self, offset: usize, size: usize) -> Option<u8> {
         let len = self.len();
         let offset = self.prefix as usize + offset;
         if offset == 0 {
@@ -45,7 +45,7 @@ impl<'a> BitBuf<'a> {
                 return None;
             }
             Some(self.data[0])
-        } else if len < 8 || offset > len - 8 {
+        } else if len < size {
             None
         } else {
             let offset_bytes = offset / 8;
@@ -54,13 +54,19 @@ impl<'a> BitBuf<'a> {
                 Some(self.data[offset_bytes])
             } else {
                 let offset_rem_inv = 8 - offset_rem;
-                Some(
+                Some(if size + offset_rem <= 8 {
+                    ((self.data[offset_bytes] & (255 >> offset_rem)) << offset_rem)
+                } else {
                     ((self.data[offset_bytes] & (255 >> offset_rem)) << offset_rem)
                         + ((self.data[(offset_bytes) + 1] & (255 << offset_rem_inv))
-                            >> offset_rem_inv),
-                )
+                            >> offset_rem_inv)
+                })
             }
         }
+    }
+
+    pub fn byte_at_offset(&self, offset: usize) -> Option<u8> {
+        self.data_at_offset(offset, 8)
     }
 
     pub fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
@@ -86,7 +92,7 @@ impl<'a> BitBuf<'a> {
                 return Err(CopyError::Overflow);
             }
             let byte = self
-                .byte_at_offset(bytes * 8)
+                .data_at_offset(bytes * 8, rem)
                 .ok_or(CopyError::Insufficient(Insufficient))?
                 & (255 << (8 - rem));
             dst[bytes] |= byte;
