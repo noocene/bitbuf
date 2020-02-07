@@ -213,7 +213,6 @@ impl<'a> BitBufMut<'a> {
             }
             let byte = data[bytes];
             self.write(byte, rem)?;
-            self.advance(rem)?;
         }
         Ok(())
     }
