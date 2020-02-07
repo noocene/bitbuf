@@ -185,12 +185,15 @@ impl<'a> BitBufMut<'a> {
     }
 
     pub fn put_byte(&mut self, item: u8) -> Result<(), Insufficient> {
-        if self.data.len() < 2 {
+        if self.data.len() == 0 {
             return Err(Insufficient);
         }
         if self.prefix == 0 {
             self.data[0] = item;
         } else {
+            if self.data.len() == 1 {
+                return Err(Insufficient);
+            }
             let inv_prefix = 8 - self.prefix;
             self.data[0] |= item >> self.prefix;
             self.data[0] &= (item >> self.prefix) | (255 << inv_prefix);
