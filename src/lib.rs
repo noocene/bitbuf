@@ -1,3 +1,5 @@
+#![no_std]
+
 use core::mem::replace;
 
 #[derive(Debug)]
