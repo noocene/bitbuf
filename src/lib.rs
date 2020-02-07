@@ -216,8 +216,14 @@ impl<'a> BitBufMut<'a> {
                 return Err(CopyError::Overflow);
             }
             let byte = data[bytes];
-            println!("write");
             self.write(byte, rem)?;
+        }
+        Ok(())
+    }
+
+    pub fn put_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
+        for byte in data {
+            self.put_byte(*byte)?;
         }
         Ok(())
     }
