@@ -102,6 +102,12 @@ impl<'a> BitBuf<'a> {
         Some(byte & 128 != 0)
     }
 
+    pub fn pop_byte(&mut self) -> Option<u8> {
+        let byte = self.byte_at_offset(0)?;
+        self.advance(8).unwrap();
+        Some(byte)
+    }
+
     pub fn len(&self) -> usize {
         self.data.len() * 8 - self.prefix as usize
     }
