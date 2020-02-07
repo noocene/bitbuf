@@ -179,7 +179,7 @@ impl<'a> BitBufMut<'a> {
     }
 
     pub fn put_byte(&mut self, item: u8) -> Result<(), Insufficient> {
-        if self.data.len() == 0 {
+        if self.data.len() < 2 {
             return Err(Insufficient);
         }
         if self.prefix == 0 {
