@@ -1,3 +1,5 @@
+use core::mem::replace;
+
 #[derive(Debug)]
 pub struct Insufficient;
 
@@ -78,7 +80,7 @@ impl<'a> BitBuf<'a> {
                 .ok_or(CopyError::Insufficient(Insufficient))?;
         }
         let rem = bits & 7;
-        if rem > 0 {
+        if rem != 0 {
             if len < bytes + 1 {
                 return Err(CopyError::Overflow);
             }
@@ -108,20 +110,104 @@ impl<'a> BitBuf<'a> {
 pub struct BitBufMut<'a> {
     data: &'a mut [u8],
     prefix: u8,
+    len: usize,
 }
 
 impl<'a> BitBufMut<'a> {
     pub fn new(data: &'a mut [u8]) -> Self {
-        BitBufMut { data, prefix: 0 }
+        BitBufMut {
+            data,
+            prefix: 0,
+            len: 0,
+        }
     }
 
-    pub fn skip(&'a mut self, bits: usize) -> Result<(), Insufficient> {
+    pub fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
         self.prefix += (bits & 7) as u8;
         if self.prefix >= 8 {
             self.prefix -= 8;
-            self.data = self.data.get_mut((bits / 8) + 1..).ok_or(Insufficient)?;
+            let empty = &mut [];
+            let data = replace(&mut self.data, empty);
+            self.data = data.get_mut((bits / 8) + 1..).ok_or(Insufficient)?;
         } else {
-            self.data = self.data.get_mut(bits / 8..).ok_or(Insufficient)?;
+            let empty = &mut [];
+            let data = replace(&mut self.data, empty);
+            self.data = data.get_mut(bits / 8..).ok_or(Insufficient)?;
+        }
+        self.len += bits;
+        Ok(())
+    }
+
+    pub fn push(&mut self, item: bool) -> Result<(), Insufficient> {
+        if self.data.len() == 0 {
+            return Err(Insufficient);
+        }
+        let byte = &mut self.data[0];
+        if item {
+            *byte |= 128 >> self.prefix;
+        } else {
+            *byte &= 255 ^ (128 >> self.prefix);
+        }
+        self.advance(1)?;
+        Ok(())
+    }
+
+    fn write(&mut self, item: u8, bits: usize) -> Result<(), Insufficient> {
+        if self.prefix == 0 {
+            self.data[0] = item;
+        } else {
+            let inv_prefix = 8 - self.prefix;
+            let litem = item & (255 << (8 - bits));
+            let hitem = item | (255 >> bits);
+            self.data[0] |= litem >> self.prefix;
+            self.data[0] &= (hitem >> self.prefix) | (255 << inv_prefix);
+            self.data[1] |= litem << inv_prefix;
+            self.data[1] &= (hitem << inv_prefix) | (255 << self.prefix);
+        }
+        self.advance(bits)?;
+        Ok(())
+    }
+
+    pub fn put_byte(&mut self, item: u8) -> Result<(), Insufficient> {
+        if self.data.len() == 0 {
+            return Err(Insufficient);
+        }
+        if self.prefix == 0 {
+            self.data[0] = item;
+        } else {
+            let inv_prefix = 8 - self.prefix;
+            self.data[0] |= item >> self.prefix;
+            self.data[0] &= (item >> self.prefix) | (255 << inv_prefix);
+            self.data[1] |= item << inv_prefix;
+            self.data[1] &= (item << inv_prefix) | (255 << self.prefix);
+        }
+        self.advance(8)?;
+        Ok(())
+    }
+
+    pub fn put(&mut self, data: &[u8], bits: usize) -> Result<(), CopyError> {
+        let bytes = bits / 8;
+        if bits == 0 {
+            return Ok(());
+        }
+        let len = data.len();
+        if len == 0 {
+            return Err(CopyError::Overflow);
+        }
+        if len < bytes {
+            return Err(CopyError::Overflow);
+        }
+        for i in 0..bytes {
+            self.put_byte(data[i])?;
+        }
+        let rem = bits & 7;
+        if rem != 0 {
+            if len < bytes + 1 {
+                return Err(CopyError::Overflow);
+            }
+            let byte = data[bytes];
+            self.write(byte, rem)?;
+            self.advance(rem)?;
         }
         Ok(())
     }
