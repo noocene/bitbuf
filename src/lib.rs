@@ -18,8 +18,11 @@ impl From<Insufficient> for CopyError {
 pub trait BitBuf {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient>;
     fn copy_to_slice(&mut self, dst: &mut [u8], bits: usize) -> Result<(), CopyError>;
-    fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), CopyError> {
-        self.copy_to_slice(dst, dst.len() * 8)
+    fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
+        self.copy_to_slice(dst, dst.len() * 8).map_err(|e| match e {
+            CopyError::Insufficient(e) => e,
+            CopyError::Overflow => panic!("overflowed aligned slice"),
+        })
     }
     fn pop(&mut self) -> Option<bool>;
     fn pop_byte(&mut self) -> Option<u8> {
@@ -51,7 +54,7 @@ impl<'a> BitBuf for BitSlice<'a> {
         Ok(())
     }
 
-    fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), CopyError> {
+    fn copy_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
         Ok(for i in 0..dst.len() {
             dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient)?;
         })
@@ -159,11 +162,14 @@ pub trait BitBufMut {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient>;
     fn push(&mut self, item: bool) -> Result<(), Insufficient>;
     fn put(&mut self, data: &[u8], bits: usize) -> Result<(), CopyError>;
-    fn put_byte(&mut self, data: u8) -> Result<(), CopyError> {
+    fn put_byte(&mut self, data: u8) -> Result<(), Insufficient> {
         self.put_aligned(&[data])
     }
-    fn put_aligned(&mut self, data: &[u8]) -> Result<(), CopyError> {
-        self.put(data, data.len() * 8)
+    fn put_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
+        self.put(data, data.len() * 8).map_err(|e| match e {
+            CopyError::Insufficient(e) => e,
+            CopyError::Overflow => panic!("overflowed on aligend slice"),
+        })
     }
 }
 
@@ -202,7 +208,7 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
         Ok(())
     }
 
-    fn put_byte(&mut self, item: u8) -> Result<(), CopyError> {
+    fn put_byte(&mut self, item: u8) -> Result<(), Insufficient> {
         if self.data.len() == 0 {
             return Err(Insufficient.into());
         }
@@ -248,7 +254,7 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
         Ok(())
     }
 
-    fn put_aligned(&mut self, data: &[u8]) -> Result<(), CopyError> {
+    fn put_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
         for byte in data {
             self.put_byte(*byte)?;
         }
