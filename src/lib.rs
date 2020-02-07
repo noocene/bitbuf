@@ -122,6 +122,10 @@ impl<'a> BitBufMut<'a> {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
     pub fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
         self.prefix += (bits & 7) as u8;
         if self.prefix >= 8 {
