@@ -49,6 +49,14 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
         }
     }
 
+    pub fn as_buf<'a>(&'a self) -> impl BitBuf + 'a {
+        BitSlice::new(self.buf.borrow())
+    }
+
+    pub fn as_buf_mut<'a>(&'a mut self) -> impl BitBufMut + 'a {
+        BitSliceMut::new(self.buf.borrow_mut())
+    }
+
     pub fn new(buf: T) -> Self {
         Fill { len: 0, buf }
     }
