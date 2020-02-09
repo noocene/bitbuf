@@ -1,4 +1,4 @@
-use core::mem::replace;
+use core::{borrow::BorrowMut, mem::replace};
 
 #[derive(Debug)]
 pub struct Insufficient;
@@ -15,6 +15,42 @@ pub enum UnalignedError {
 impl From<Insufficient> for UnalignedError {
     fn from(inwrite: Insufficient) -> Self {
         UnalignedError::Insufficient(inwrite)
+    }
+}
+
+pub struct Fill<T: BorrowMut<[u8]>> {
+    len: usize,
+    buf: T,
+}
+
+impl<T: BorrowMut<[u8]>> Fill<T> {
+    pub fn fill_from<B: BitBuf>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+        let target_buf = self.buf.borrow_mut();
+        let buf_len = target_buf.len() * 8;
+        let mut target = BitSliceMut::new(target_buf);
+        loop {
+            if self.len < buf_len {
+                target
+                    .advance(self.len)
+                    .expect("could not advance internal Fill buffer");
+                let bit = buf.read_bool();
+                match bit {
+                    Some(bit) => {
+                        target
+                            .write_bool(bit)
+                            .expect("could not write byte to internal Fill buffer");
+                        self.len += 1
+                    }
+                    None => return Err(Insufficient),
+                }
+            } else {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn new(buf: T) -> Self {
+        Fill { len: 0, buf }
     }
 }
 
