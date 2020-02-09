@@ -4,9 +4,12 @@ use core::mem::replace;
 pub struct Insufficient;
 
 #[derive(Debug)]
+pub struct Overflow;
+
+#[derive(Debug)]
 pub enum UnalignedError {
     Insufficient(Insufficient),
-    Overflow,
+    Overflow(Overflow),
 }
 
 impl From<Insufficient> for UnalignedError {
@@ -17,17 +20,27 @@ impl From<Insufficient> for UnalignedError {
 
 pub trait BitBuf {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient>;
-    fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<(), UnalignedError>;
-    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
-        self.read(dst, dst.len() * 8).map_err(|e| match e {
+    fn read_all(&mut self, dst: &mut [u8], bits: usize) -> Result<(), UnalignedError> {
+        if self.remaining() < bits {
+            Err(UnalignedError::Insufficient(Insufficient))
+        } else {
+            self.read(dst, bits)
+                .map_err(UnalignedError::Overflow)
+                .map(|_| {})
+        }
+    }
+    fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<usize, Overflow>;
+    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<usize, Overflow>;
+    fn read_aligned_all(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
+        self.read_all(dst, dst.len() * 8).map_err(|e| match e {
             UnalignedError::Insufficient(e) => e,
-            UnalignedError::Overflow => panic!("overflowed aligned slice"),
+            UnalignedError::Overflow(_) => panic!("overflowed aligned slice"),
         })
     }
     fn read_bool(&mut self) -> Option<bool>;
     fn read_byte(&mut self) -> Option<u8> {
         let mut data = [0];
-        self.read_aligned(&mut data).ok()?;
+        self.read_aligned_all(&mut data).ok()?;
         Some(data[0])
     }
     fn remaining(&self) -> usize;
@@ -54,41 +67,57 @@ impl<'a> BitBuf for BitSlice<'a> {
         Ok(())
     }
 
-    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
-        Ok(for i in 0..dst.len() {
-            dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient)?;
-        })
+    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<usize, Overflow> {
+        let re = self.remaining();
+        let len = dst.len();
+        let len = if len * 8 > re { re } else { len };
+        if len & 7 != 0 {
+            self.read(dst, len)?;
+        } else {
+            for i in 0..dst.len() {
+                dst[i] = self
+                    .byte_at_offset(i * 8)
+                    .ok_or(Insufficient)
+                    .expect("insufficient data for remaining-checked aligned read");
+            }
+        }
+        Ok(len)
     }
 
     fn len(&self) -> usize {
         self.len
     }
 
-    fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<(), UnalignedError> {
+    fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<usize, Overflow> {
+        let re = self.remaining();
+        let bits = if bits > re { re } else { bits };
         let bytes = bits / 8;
         let len = dst.len();
         if len < bytes {
-            return Err(UnalignedError::Overflow);
+            return Err(Overflow);
         }
         for i in 0..bytes {
             dst[i] = self
                 .byte_at_offset(i * 8)
-                .ok_or(UnalignedError::Insufficient(Insufficient))?;
+                .ok_or(UnalignedError::Insufficient(Insufficient))
+                .expect("insufficient data for remaining-checked read");
         }
         let rem = bits & 7;
         if rem != 0 {
             if len < bytes + 1 {
-                return Err(UnalignedError::Overflow);
+                return Err(Overflow);
             }
             let byte = self
                 .data_at_offset(bytes * 8, rem)
-                .ok_or(UnalignedError::Insufficient(Insufficient))?
+                .ok_or(UnalignedError::Insufficient(Insufficient))
+                .expect("insufficient data for remaining-checked read")
                 & (255 << (8 - rem));
             dst[bytes] |= byte;
             dst[bytes] &= byte;
         }
-        self.advance(bits)?;
-        Ok(())
+        self.advance(bits)
+            .expect("insufficient data for remaining-checked read advance");
+        Ok(bits)
     }
 
     fn read_bool(&mut self) -> Option<bool> {
@@ -169,7 +198,7 @@ pub trait BitBufMut {
     fn write_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
         self.write(data, data.len() * 8).map_err(|e| match e {
             UnalignedError::Insufficient(e) => e,
-            UnalignedError::Overflow => panic!("overflowed on aligend slice"),
+            UnalignedError::Overflow(_) => panic!("overflowed on aligend slice"),
         })
     }
 }
@@ -240,10 +269,10 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
         }
         let len = data.len();
         if len == 0 {
-            return Err(UnalignedError::Overflow);
+            return Err(UnalignedError::Overflow(Overflow));
         }
         if len < bytes {
-            return Err(UnalignedError::Overflow);
+            return Err(UnalignedError::Overflow(Overflow));
         }
         for i in 0..bytes {
             self.write_byte(data[i])?;
@@ -251,7 +280,7 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
         let rem = bits & 7;
         if rem != 0 {
             if len < bytes + 1 {
-                return Err(UnalignedError::Overflow);
+                return Err(UnalignedError::Overflow(Overflow));
             }
             let byte = data[bytes];
             self.write(byte, rem)?;
