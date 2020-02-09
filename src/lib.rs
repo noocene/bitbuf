@@ -28,17 +28,14 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
         let target_buf = self.buf.borrow_mut();
         let buf_len = target_buf.len() * 8;
         let mut target = BitSliceMut::new(target_buf);
+        target.advance(self.len).unwrap();
+
         loop {
             if self.len < buf_len {
-                target
-                    .advance(self.len)
-                    .expect("could not advance internal Fill buffer");
                 let bit = buf.read_bool();
                 match bit {
                     Some(bit) => {
-                        target
-                            .write_bool(bit)
-                            .expect("could not write byte to internal Fill buffer");
+                        target.write_bool(bit).unwrap();
                         self.len += 1
                     }
                     None => return Err(Insufficient),
@@ -51,10 +48,6 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
 
     pub fn as_buf<'a>(&'a self) -> impl BitBuf + 'a {
         BitSlice::new(self.buf.borrow())
-    }
-
-    pub fn as_buf_mut<'a>(&'a mut self) -> impl BitBufMut + 'a {
-        BitSliceMut::new(self.buf.borrow_mut())
     }
 
     pub fn new(buf: T) -> Self {
@@ -100,6 +93,9 @@ pub struct BitSlice<'a> {
 
 impl<'a> BitBuf for BitSlice<'a> {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
+        if bits > self.remaining() {
+            return Err(Insufficient);
+        }
         self.prefix += (bits & 7) as u8;
         if self.prefix >= 8 {
             self.prefix -= 8;
@@ -119,10 +115,7 @@ impl<'a> BitBuf for BitSlice<'a> {
             self.read(dst, len)?;
         } else {
             for i in 0..dst.len() {
-                dst[i] = self
-                    .byte_at_offset(i * 8)
-                    .ok_or(Insufficient)
-                    .expect("insufficient data for remaining-checked aligned read");
+                dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient).unwrap();
             }
         }
         Ok(len)
@@ -144,7 +137,7 @@ impl<'a> BitBuf for BitSlice<'a> {
             dst[i] = self
                 .byte_at_offset(i * 8)
                 .ok_or(UnalignedError::Insufficient(Insufficient))
-                .expect("insufficient data for remaining-checked read");
+                .unwrap();
         }
         let rem = bits & 7;
         if rem != 0 {
@@ -154,18 +147,17 @@ impl<'a> BitBuf for BitSlice<'a> {
             let byte = self
                 .data_at_offset(bytes * 8, rem)
                 .ok_or(UnalignedError::Insufficient(Insufficient))
-                .expect("insufficient data for remaining-checked read")
+                .unwrap()
                 & (255 << (8 - rem));
             dst[bytes] |= byte;
             dst[bytes] &= byte;
         }
-        self.advance(bits)
-            .expect("insufficient data for remaining-checked read advance");
+        self.advance(bits).unwrap();
         Ok(bits)
     }
 
     fn read_bool(&mut self) -> Option<bool> {
-        let byte = self.byte_at_offset(0)?;
+        let byte = self.data_at_offset(0, 1)?;
         self.advance(1).unwrap();
         Some(byte & 128 != 0)
     }
@@ -257,6 +249,9 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
     }
 
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
+        if bits > self.remaining() {
+            return Err(Insufficient);
+        }
         self.prefix += (bits & 7) as u8;
         if self.prefix >= 8 {
             self.prefix -= 8;
