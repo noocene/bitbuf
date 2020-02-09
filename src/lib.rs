@@ -159,6 +159,7 @@ pub struct BitSliceMut<'a> {
 
 pub trait BitBufMut {
     fn len(&self) -> usize;
+    fn remaining(&self) -> usize;
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient>;
     fn write_bool(&mut self, item: bool) -> Result<(), Insufficient>;
     fn write(&mut self, data: &[u8], bits: usize) -> Result<(), UnalignedError>;
@@ -176,6 +177,10 @@ pub trait BitBufMut {
 impl<'a> BitBufMut for BitSliceMut<'a> {
     fn len(&self) -> usize {
         self.len
+    }
+
+    fn remaining(&self) -> usize {
+        self.data.len() * 8 - self.prefix as usize
     }
 
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
