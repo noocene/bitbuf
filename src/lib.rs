@@ -1,4 +1,7 @@
-use core::{borrow::BorrowMut, mem::replace};
+use core::{
+    borrow::{Borrow, BorrowMut},
+    mem::replace,
+};
 
 #[derive(Debug)]
 pub struct Insufficient;
@@ -112,6 +115,97 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
 
     pub fn new(buf: T) -> Self {
         Fill { len: 0, buf }
+    }
+}
+
+pub struct Drain<T: Borrow<[u8]>> {
+    len: usize,
+    buf: T,
+}
+
+impl<T: Borrow<[u8]>> Drain<T> {
+    pub fn into_inner(self) -> T {
+        self.buf
+    }
+
+    pub fn drain_into<B: BitBufMut>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+        let target_buf = self.buf.borrow();
+        let buf_len = target_buf.len() * 8;
+        let mut target = BitSlice::new(target_buf);
+        target.advance(self.len).unwrap();
+
+        loop {
+            if self.len < buf_len {
+                if buf.remaining() >= 8 && buf_len - self.len >= 8 {
+                    buf.write_byte(target.read_byte().unwrap()).unwrap();
+                    self.len += 8;
+                } else {
+                    let bit = buf.write_bool(target.read_bool().unwrap());
+                    if let Ok(()) = bit {
+                        self.len += 1;
+                    } else {
+                        return Err(Insufficient);
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn as_buf<'a>(&'a self) -> impl BitBuf + 'a {
+        BitSlice::new(self.buf.borrow())
+    }
+
+    pub fn new(buf: T) -> Self {
+        Drain { len: 0, buf }
+    }
+}
+
+pub struct CappedDrain<T: Borrow<[u8]>> {
+    cap: usize,
+    len: usize,
+    buf: T,
+}
+
+impl<T: Borrow<[u8]>> CappedDrain<T> {
+    pub fn into_inner(self) -> T {
+        self.buf
+    }
+
+    pub fn drain_into<B: BitBufMut>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+        let target_buf = self.buf.borrow();
+        let mut target = BitSlice::new(target_buf);
+        target.advance(self.len).unwrap();
+
+        loop {
+            if self.len < self.cap {
+                if buf.remaining() >= 8 && self.cap - self.len >= 8 {
+                    buf.write_byte(target.read_byte().unwrap()).unwrap();
+                    self.len += 8;
+                } else {
+                    let bit = buf.write_bool(target.read_bool().unwrap());
+                    if let Ok(()) = bit {
+                        self.len += 1;
+                    } else {
+                        return Err(Insufficient);
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn as_buf<'a>(&'a self) -> impl BitBuf + 'a {
+        BitSlice::new(self.buf.borrow())
+    }
+
+    pub fn new(buf: T, cap: usize) -> Result<Self, Overflow> {
+        if cap > buf.borrow().len() * 8 {
+            return Err(Overflow);
+        }
+        Ok(CappedDrain { len: 0, buf, cap })
     }
 }
 
