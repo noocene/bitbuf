@@ -24,6 +24,10 @@ pub struct Fill<T: BorrowMut<[u8]>> {
 }
 
 impl<T: BorrowMut<[u8]>> Fill<T> {
+    pub fn into_inner(self) -> T {
+        self.buf
+    }
+
     pub fn fill_from<B: BitBuf>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
         let target_buf = self.buf.borrow_mut();
         let buf_len = target_buf.len() * 8;
