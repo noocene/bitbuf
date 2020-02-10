@@ -36,13 +36,19 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
 
         loop {
             if self.len < buf_len {
-                let bit = buf.read_bool();
-                match bit {
-                    Some(bit) => {
-                        target.write_bool(bit).unwrap();
-                        self.len += 1
+                if buf.remaining() >= 8 && buf_len - self.len >= 8 {
+                    let byte = buf.read_byte().unwrap();
+                    target.write_byte(byte).unwrap();
+                    self.len += 8;
+                } else {
+                    let bit = buf.read_bool();
+                    match bit {
+                        Some(bit) => {
+                            target.write_bool(bit).unwrap();
+                            self.len += 1
+                        }
+                        None => return Err(Insufficient),
                     }
-                    None => return Err(Insufficient),
                 }
             } else {
                 return Ok(());
