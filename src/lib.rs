@@ -127,7 +127,10 @@ pub trait BitBuf {
         }
     }
     fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<usize, Overflow>;
-    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<usize, Overflow>;
+    fn read_aligned(&mut self, dst: &mut [u8]) -> usize {
+        self.read(dst, dst.len() * 8)
+            .expect("overflowed aligned slice")
+    }
     fn read_aligned_all(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
         self.read_all(dst, dst.len() * 8).map_err(|e| match e {
             UnalignedError::Insufficient(e) => e,
@@ -167,18 +170,18 @@ impl<'a> BitBuf for BitSlice<'a> {
         Ok(())
     }
 
-    fn read_aligned(&mut self, dst: &mut [u8]) -> Result<usize, Overflow> {
+    fn read_aligned(&mut self, dst: &mut [u8]) -> usize {
         let re = self.remaining();
         let len = dst.len();
         let len = if len * 8 > re { re } else { len };
         if len & 7 != 0 {
-            self.read(dst, len)?;
+            return self.read(dst, len * 8).expect("overflowed aligned slice");
         } else {
             for i in 0..dst.len() {
                 dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient).unwrap();
             }
         }
-        Ok(len)
+        len
     }
 
     fn len(&self) -> usize {
@@ -190,7 +193,7 @@ impl<'a> BitBuf for BitSlice<'a> {
         let bits = if bits > re { re } else { bits };
         let bytes = bits / 8;
         let len = dst.len();
-        if len < bytes {
+        if len * 8 < bits {
             return Err(Overflow);
         }
         for i in 0..bytes {
@@ -287,15 +290,31 @@ pub trait BitBufMut {
     fn remaining(&self) -> usize;
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient>;
     fn write_bool(&mut self, item: bool) -> Result<(), Insufficient>;
-    fn write(&mut self, data: &[u8], bits: usize) -> Result<(), UnalignedError>;
-    fn write_byte(&mut self, data: u8) -> Result<(), Insufficient> {
-        self.write_aligned(&[data])
+    fn write(&mut self, data: &[u8], bits: usize) -> Result<usize, Overflow>;
+    fn write_all(&mut self, data: &[u8], bits: usize) -> Result<(), UnalignedError> {
+        if bits > self.remaining() {
+            Err(UnalignedError::Insufficient(Insufficient))
+        } else {
+            self.write(data, bits)
+                .map_err(UnalignedError::Overflow)
+                .map(|_| {})
+        }
     }
-    fn write_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
-        self.write(data, data.len() * 8).map_err(|e| match e {
-            UnalignedError::Insufficient(e) => e,
-            UnalignedError::Overflow(_) => panic!("overflowed on aligend slice"),
-        })
+    fn write_byte(&mut self, data: u8) -> Result<(), Insufficient> {
+        self.write_aligned_all(&[data])
+    }
+    fn write_aligned(&mut self, data: &[u8]) -> usize {
+        self.write(data, data.len() * 8)
+            .expect("overflowed aligned buffer")
+    }
+    fn write_aligned_all(&mut self, data: &[u8]) -> Result<(), Insufficient> {
+        let bits = data.len() * 8;
+        if bits > self.remaining() {
+            Err(Insufficient)
+        } else {
+            self.write(data, bits).expect("overflowed aligned buffer");
+            Ok(())
+        }
     }
 }
 
@@ -361,37 +380,47 @@ impl<'a> BitBufMut for BitSliceMut<'a> {
         Ok(())
     }
 
-    fn write(&mut self, data: &[u8], bits: usize) -> Result<(), UnalignedError> {
+    fn write(&mut self, data: &[u8], bits: usize) -> Result<usize, Overflow> {
         let bytes = bits / 8;
+        let re = self.remaining();
+        let bits = if bits > re { re } else { bits };
         if bits == 0 {
-            return Ok(());
+            return Ok(0);
         }
         let len = data.len();
         if len == 0 {
-            return Err(UnalignedError::Overflow(Overflow));
+            return Err(Overflow);
         }
-        if len < bytes {
-            return Err(UnalignedError::Overflow(Overflow));
+        if len * 8 < bits {
+            return Err(Overflow);
         }
         for i in 0..bytes {
-            self.write_byte(data[i])?;
+            self.write_byte(data[i])
+                .expect("overflowed restricted buffer");
         }
         let rem = bits & 7;
         if rem != 0 {
             if len < bytes + 1 {
-                return Err(UnalignedError::Overflow(Overflow));
+                return Err(Overflow);
             }
             let byte = data[bytes];
-            self.write(byte, rem)?;
+            self.write(byte, rem).expect("overflowed restricted buffer");
         }
-        Ok(())
+        Ok(bits)
     }
 
-    fn write_aligned(&mut self, data: &[u8]) -> Result<(), Insufficient> {
-        for byte in data {
-            self.write_byte(*byte)?;
+    fn write_aligned(&mut self, data: &[u8]) -> usize {
+        let len = data.len() * 8;
+        let re = self.remaining();
+        let len = if len > re { re } else { len };
+        if len & 7 != 0 {
+            BitBufMut::write(self, data, len).expect("overflowed aligned buffer");
+        } else {
+            for byte in &data[..len / 8] {
+                self.write_byte(*byte).expect("overflowed aligned buffer");
+            }
         }
-        Ok(())
+        len
     }
 }
 
