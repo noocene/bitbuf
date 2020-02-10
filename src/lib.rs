@@ -23,6 +23,56 @@ pub struct Fill<T: BorrowMut<[u8]>> {
     buf: T,
 }
 
+pub struct CappedFill<T: BorrowMut<[u8]>> {
+    len: usize,
+    cap: usize,
+    buf: T,
+}
+
+impl<T: BorrowMut<[u8]>> CappedFill<T> {
+    pub fn into_inner(self) -> T {
+        self.buf
+    }
+
+    pub fn fill_from<B: BitBuf>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+        let target_buf = self.buf.borrow_mut();
+        let mut target = BitSliceMut::new(target_buf);
+        target.advance(self.len).unwrap();
+
+        loop {
+            if self.len < self.cap {
+                if buf.remaining() >= 8 && self.cap - self.len >= 8 {
+                    let byte = buf.read_byte().unwrap();
+                    target.write_byte(byte).unwrap();
+                    self.len += 8;
+                } else {
+                    let bit = buf.read_bool();
+                    match bit {
+                        Some(bit) => {
+                            target.write_bool(bit).unwrap();
+                            self.len += 1
+                        }
+                        None => return Err(Insufficient),
+                    }
+                }
+            } else {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn as_buf<'a>(&'a self) -> impl BitBuf + 'a {
+        BitSlice::new(self.buf.borrow())
+    }
+
+    pub fn new(mut buf: T, cap: usize) -> Result<Self, Overflow> {
+        if cap > buf.borrow_mut().len() * 8 {
+            return Err(Overflow);
+        }
+        Ok(CappedFill { len: 0, buf, cap })
+    }
+}
+
 impl<T: BorrowMut<[u8]>> Fill<T> {
     pub fn into_inner(self) -> T {
         self.buf
