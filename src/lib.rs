@@ -51,11 +51,11 @@ impl<T: BorrowMut<[u8]>> CappedFill<T> {
                 } else {
                     let bit = buf.read_bool();
                     match bit {
-                        Some(bit) => {
+                        Ok(bit) => {
                             target.write_bool(bit).unwrap();
                             self.len += 1
                         }
-                        None => return Err(Insufficient),
+                        Err(e) => return Err(e),
                     }
                 }
             } else {
@@ -96,11 +96,11 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
                 } else {
                     let bit = buf.read_bool();
                     match bit {
-                        Some(bit) => {
+                        Ok(bit) => {
                             target.write_bool(bit).unwrap();
                             self.len += 1
                         }
-                        None => return Err(Insufficient),
+                        Err(e) => return Err(e),
                     }
                 }
             } else {
@@ -231,11 +231,11 @@ pub trait BitBuf {
             UnalignedError::Overflow(_) => panic!("overflowed aligned slice"),
         })
     }
-    fn read_bool(&mut self) -> Option<bool>;
-    fn read_byte(&mut self) -> Option<u8> {
-        let mut data = [0];
-        self.read_aligned_all(&mut data).ok()?;
-        Some(data[0])
+    fn read_bool(&mut self) -> Result<bool, Insufficient>;
+    fn read_byte(&mut self) -> Result<u8, Insufficient> {
+        let mut data = [0u8];
+        self.read_aligned_all(&mut data)?;
+        Ok(data[0])
     }
     fn remaining(&self) -> usize;
     fn len(&self) -> usize;
@@ -272,7 +272,7 @@ impl<'a> BitBuf for BitSlice<'a> {
             return self.read(dst, len * 8).expect("overflowed aligned slice");
         } else {
             for i in 0..dst.len() {
-                dst[i] = self.byte_at_offset(i * 8).ok_or(Insufficient).unwrap();
+                dst[i] = self.byte_at_offset(i * 8).unwrap();
             }
         }
         len
@@ -293,7 +293,7 @@ impl<'a> BitBuf for BitSlice<'a> {
         for i in 0..bytes {
             dst[i] = self
                 .byte_at_offset(i * 8)
-                .ok_or(UnalignedError::Insufficient(Insufficient))
+                .map_err(UnalignedError::Insufficient)
                 .unwrap();
         }
         let rem = bits & 7;
@@ -303,7 +303,7 @@ impl<'a> BitBuf for BitSlice<'a> {
             }
             let byte = self
                 .data_at_offset(bytes * 8, rem)
-                .ok_or(UnalignedError::Insufficient(Insufficient))
+                .map_err(UnalignedError::Insufficient)
                 .unwrap()
                 & (255 << (8 - rem));
             dst[bytes] |= byte;
@@ -313,16 +313,16 @@ impl<'a> BitBuf for BitSlice<'a> {
         Ok(bits)
     }
 
-    fn read_bool(&mut self) -> Option<bool> {
+    fn read_bool(&mut self) -> Result<bool, Insufficient> {
         let byte = self.data_at_offset(0, 1)?;
         self.advance(1).unwrap();
-        Some(byte & 128 != 0)
+        Ok(byte & 128 != 0)
     }
 
-    fn read_byte(&mut self) -> Option<u8> {
+    fn read_byte(&mut self) -> Result<u8, Insufficient> {
         let byte = self.byte_at_offset(0)?;
         self.advance(8).unwrap();
-        Some(byte)
+        Ok(byte)
     }
 
     fn remaining(&self) -> usize {
@@ -339,24 +339,24 @@ impl<'a> BitSlice<'a> {
         }
     }
 
-    fn data_at_offset(&self, offset: usize, size: usize) -> Option<u8> {
+    fn data_at_offset(&self, offset: usize, size: usize) -> Result<u8, Insufficient> {
         let len = self.remaining();
         let offset = self.prefix as usize + offset;
         if offset == 0 {
             if len == 0 {
-                return None;
+                return Err(Insufficient);
             }
-            Some(self.data[0])
+            Ok(self.data[0])
         } else if len < size {
-            None
+            Err(Insufficient)
         } else {
             let offset_bytes = offset / 8;
             let offset_rem = offset & 7;
             if offset_rem == 0 {
-                Some(self.data[offset_bytes])
+                Ok(self.data[offset_bytes])
             } else {
                 let offset_rem_inv = 8 - offset_rem;
-                Some(if size + offset_rem <= 8 {
+                Ok(if size + offset_rem <= 8 {
                     ((self.data[offset_bytes] & (255 >> offset_rem)) << offset_rem)
                 } else {
                     ((self.data[offset_bytes] & (255 >> offset_rem)) << offset_rem)
@@ -367,7 +367,7 @@ impl<'a> BitSlice<'a> {
         }
     }
 
-    fn byte_at_offset(&self, offset: usize) -> Option<u8> {
+    fn byte_at_offset(&self, offset: usize) -> Result<u8, Insufficient> {
         self.data_at_offset(offset, 8)
     }
 }
