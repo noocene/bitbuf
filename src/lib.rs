@@ -37,7 +37,7 @@ impl<T: BorrowMut<[u8]>> CappedFill<T> {
         self.buf
     }
 
-    pub fn fill_from<B: BitBuf>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+    pub fn fill_from<B: BitBuf>(&mut self, mut buf: B) -> Result<(), Insufficient> {
         let target_buf = self.buf.borrow_mut();
         let mut target = BitSliceMut::new(target_buf);
         target.advance(self.len).unwrap();
@@ -81,7 +81,7 @@ impl<T: BorrowMut<[u8]>> Fill<T> {
         self.buf
     }
 
-    pub fn fill_from<B: BitBuf>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+    pub fn fill_from<B: BitBuf>(&mut self, mut buf: B) -> Result<(), Insufficient> {
         let target_buf = self.buf.borrow_mut();
         let buf_len = target_buf.len() * 8;
         let mut target = BitSliceMut::new(target_buf);
@@ -128,7 +128,7 @@ impl<T: Borrow<[u8]>> Drain<T> {
         self.buf
     }
 
-    pub fn drain_into<B: BitBufMut>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+    pub fn drain_into<B: BitBufMut>(&mut self, mut buf: B) -> Result<(), Insufficient> {
         let target_buf = self.buf.borrow();
         let buf_len = target_buf.len() * 8;
         let mut target = BitSlice::new(target_buf);
@@ -173,7 +173,7 @@ impl<T: Borrow<[u8]>> CappedDrain<T> {
         self.buf
     }
 
-    pub fn drain_into<B: BitBufMut>(&mut self, buf: &mut B) -> Result<(), Insufficient> {
+    pub fn drain_into<B: BitBufMut>(&mut self, mut buf: B) -> Result<(), Insufficient> {
         let target_buf = self.buf.borrow();
         let mut target = BitSlice::new(target_buf);
         target.advance(self.len).unwrap();
