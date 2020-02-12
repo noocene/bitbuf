@@ -241,6 +241,66 @@ pub trait BitBuf {
     fn len(&self) -> usize;
 }
 
+impl<'a, T: BitBuf> BitBuf for &'a mut T {
+    fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
+        T::advance(self, bits)
+    }
+    fn read_all(&mut self, dst: &mut [u8], bits: usize) -> Result<(), UnalignedError> {
+        T::read_all(self, dst, bits)
+    }
+    fn read(&mut self, dst: &mut [u8], bits: usize) -> Result<usize, Overflow> {
+        T::read(self, dst, bits)
+    }
+    fn read_aligned(&mut self, dst: &mut [u8]) -> usize {
+        T::read_aligned(self, dst)
+    }
+    fn read_aligned_all(&mut self, dst: &mut [u8]) -> Result<(), Insufficient> {
+        T::read_aligned_all(self, dst)
+    }
+    fn read_bool(&mut self) -> Result<bool, Insufficient> {
+        T::read_bool(self)
+    }
+    fn read_byte(&mut self) -> Result<u8, Insufficient> {
+        T::read_byte(self)
+    }
+    fn remaining(&self) -> usize {
+        T::remaining(self)
+    }
+    fn len(&self) -> usize {
+        T::len(self)
+    }
+}
+
+impl<'a, T: BitBufMut> BitBufMut for &'a mut T {
+    fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
+        T::advance(self, bits)
+    }
+    fn write_all(&mut self, dst: &[u8], bits: usize) -> Result<(), UnalignedError> {
+        T::write_all(self, dst, bits)
+    }
+    fn write(&mut self, dst: &[u8], bits: usize) -> Result<usize, Overflow> {
+        T::write(self, dst, bits)
+    }
+    fn write_aligned(&mut self, dst: &[u8]) -> usize {
+        T::write_aligned(self, dst)
+    }
+    fn write_aligned_all(&mut self, dst: &[u8]) -> Result<(), Insufficient> {
+        T::write_aligned_all(self, dst)
+    }
+    fn write_bool(&mut self, bit: bool) -> Result<(), Insufficient> {
+        T::write_bool(self, bit)
+    }
+    fn write_byte(&mut self, byte: u8) -> Result<(), Insufficient> {
+        T::write_byte(self, byte)
+    }
+    fn remaining(&self) -> usize {
+        T::remaining(self)
+    }
+    fn len(&self) -> usize {
+        T::len(self)
+    }
+}
+
 #[derive(Debug)]
 pub struct BitSlice<'a> {
     data: &'a [u8],
