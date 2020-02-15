@@ -1,3 +1,5 @@
+#![no_std]
+
 use core::{
     borrow::{Borrow, BorrowMut},
     mem::replace,
