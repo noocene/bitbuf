@@ -243,7 +243,7 @@ pub trait BitBuf {
     fn len(&self) -> usize;
 }
 
-impl<'a, T: BitBuf> BitBuf for &'a mut T {
+impl<'a, T: ?Sized + BitBuf> BitBuf for &'a mut T {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
         T::advance(self, bits)
     }
@@ -273,7 +273,7 @@ impl<'a, T: BitBuf> BitBuf for &'a mut T {
     }
 }
 
-impl<'a, T: BitBufMut> BitBufMut for &'a mut T {
+impl<'a, T: ?Sized + BitBufMut> BitBufMut for &'a mut T {
     fn advance(&mut self, bits: usize) -> Result<(), Insufficient> {
         T::advance(self, bits)
     }
